@@ -1,32 +1,67 @@
 import hashlib
 import os
 import threading
+import socket
+import json
+
+threads = []
+positive_result = []
+ip = "127.0.0.1"
+port = 8080
 
 def get_cores():
     #a function that returns the number of cores
     return os.cpu_count()
 
-def create_threads(start, end, target, results):
-    #a function that creates multiple threads that each one of them checks if the hashed number is in its given range
-    num_of_cores = get_cores()
-    #calculating how many numbers each core should check
-    numbers_for_core = (end - start) // num_of_cores
-    #creating a list that contains lists of ranges for each thread
-    ranges_for_cores = [[start + core * numbers_for_core, start + (core + 1) * numbers_for_core] for core in range(num_of_cores)]
-    threads = []
+def connect_to_server(ip, port):
+    #a function that connects to the server
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    for core in range(num_of_cores):
-        #a for loop that threads that will run the crack number function
-        t = threading.Thread(target=crack_number, args=(ranges_for_cores[core], target, results))
-        t.start()
-        threads.append(t)
-    print(threads)
-    
-    for t in threads:
-        t.join()
+    try:
+        client_socket.connect((ip, port))
+        print("Connected to the server!")
+        handle_worker(client_socket)
+        
+    finally:
+        client_socket.close()
+        print("connection closed")
+        
+def handle_worker(client_socket):
+    #a function that manages the client's work with the server
+    #sending the number of cores and recieving the target hashed number
+    number_of_cores = str(get_cores())
+    client_socket.send(number_of_cores.encode('utf-8'))
+    hash_target = client_socket.recv(1024).decode('utf-8')
 
+    while True:
+        #a for loop that recieves the ranges to work on and creates a thread for each core to work on
+        message_recieved = client_socket.recv(1024).decode('utf-8')
+        if message_recieved == "found":
+            print("found")
+            break
+        ranges_list = json.loads(message_recieved)
 
-def crack_number(range_list, target, results):
+        for i in range(len(ranges_list)):
+            #creating a thread for each core
+            t = threading.Thread(target=crack_number, args=(ranges_list[i], hash_target))
+            t.start()
+            print("created a new thread")
+            threads.append(t)
+
+        for t in threads:
+            t.join()
+
+        if positive_result:
+            #if the number was found, a message will be sent to the server
+            message = f"found,{positive_result[0]}"
+            client_socket.send(message.encode('utf-8'))
+            break
+        else:
+            #sending a message to the server incase that the number was not in the range
+            message = "notfound,"
+            client_socket.send(message.encode('utf-8'))
+
+def crack_number(range_list, target):
     #a function that searches for a hashed number in a specific number range to find the number
     start, end = range_list
     while start <= end:
@@ -35,23 +70,19 @@ def crack_number(range_list, target, results):
         
         #hashing the number and checking if the number is the hashed target
         hashed_number = hashlib.md5(string_number.encode())
-        if hashed_number.hexdigest() == target.hexdigest():
-            results.append(f"The number is: {start}")
+        if hashed_number.hexdigest() == target:
+            positive_result.append(start)
+            print("the number was found!")
             return
         start += 1
+        
     
     #in case that the number is not in the range
-    results.append("The number is not in the range")
+    print("the number was not found.")
     return
 
-start = 0
-end = 10000000
-target = 513242300
-#a list that contains the result of each thread
-results = []
-target = hashlib.md5((f"{target:010d}").encode())
-print(target.hexdigest())
+def main():
+    connect_to_server(ip, port)
 
-create_threads(start, end, target, results)
-for result in results:
-    print(result)
+if __name__ == '__main__':
+    main()
