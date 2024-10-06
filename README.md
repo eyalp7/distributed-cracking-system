@@ -26,6 +26,7 @@ This project implements a distributed computing system in Python to find the 10-
    cd md5
 
 2. **Run the server and clients**:
-  ```bash
-  python server.py
-  python client.py
+   
+   ```bash
+   python server.py
+   python client.py
